@@ -17,8 +17,6 @@ The project should demonstrate:
 * observability
 * distributed system tradeoffs
 
-This project is meant to show big-company backend engineering depth, not just CRUD implementation. 
-
 ---
 
 # 2. Core Use Case
