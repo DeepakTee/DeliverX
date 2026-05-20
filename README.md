@@ -759,3 +759,5 @@ Project is complete when you can demonstrate:
 Once complete, you can describe it like this:
 
 > Built a distributed notification delivery system using FastAPI, Kafka/Redpanda, PostgreSQL, and Redis, supporting asynchronous processing, idempotent delivery, retries, DLQ replay, priority queues, per-user ordering, and rate limiting. Simulated 100k+ notification events with horizontally scalable workers and documented consistency, reliability, and scaling tradeoffs.
+
+---

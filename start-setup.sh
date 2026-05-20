@@ -1,0 +1,1 @@
+docker compose -p deliverx-setup -f docker-compose-setup.yml up -d postgres --build --wait
