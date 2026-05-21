@@ -1,10 +1,12 @@
 from deliverx.constant.subscription import NotificationDeliveryMedium
 from deliverx.constant.notification import NotificationChannelStatus
 from deliverx.configuration.database import Base
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import mapped_column, Mapped
 from sqlalchemy.types import Integer, String, DateTime
 from sqlalchemy import Enum as SqlEnum, ForeignKey
 from datetime import datetime
+
 
 class NotificationChannels(Base):
     __tablename__ = "notification_channels"
@@ -16,7 +18,7 @@ class NotificationChannels(Base):
         nullable=False,
     )
     channel: Mapped[NotificationDeliveryMedium] = mapped_column(
-        "channel",
+        "tx_channel",
         SqlEnum(
             NotificationDeliveryMedium,
             name="notification_delivery_medium_enum",
@@ -25,7 +27,7 @@ class NotificationChannels(Base):
         nullable=False,
     )
     status: Mapped[NotificationChannelStatus] = mapped_column(
-        "status",
+        "tx_status",
         SqlEnum(
             NotificationChannelStatus,
             name="notification_channel_status_enum",
@@ -35,8 +37,31 @@ class NotificationChannels(Base):
         nullable=False,
         default=NotificationChannelStatus.PENDING,
     )
-    attempt_count: Mapped[int] = mapped_column("attempt_count", Integer, default=0)
-    last_error: Mapped[str | None] = mapped_column("last_error", String, nullable=True)
-    sent_at: Mapped[DateTime | None] = mapped_column("sent_at", DateTime, nullable=True)
-    created_at: Mapped[DateTime] = mapped_column("created_at", DateTime, default=datetime.now)
-    updated_at: Mapped[DateTime] = mapped_column("updated_at", DateTime, default=datetime.now)
+    attempt_count: Mapped[int] = mapped_column("nu_attempt_count", Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column("tx_last_error", String, nullable=True)
+    sent_at: Mapped[DateTime | None] = mapped_column("ts_sent_at", DateTime, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column("ts_created_at", DateTime, default=datetime.now)
+    updated_at: Mapped[DateTime] = mapped_column("ts_updated_at", DateTime, default=datetime.now)
+
+    @classmethod
+    async def create_many(
+        cls,
+        session: AsyncSession,
+        notification_id: int,
+        channels: list[NotificationDeliveryMedium],
+    ) -> list["NotificationChannels"]:
+        notification_channels = [
+            cls(
+                notification_id=notification_id,
+                channel=channel,
+                status=NotificationChannelStatus.PENDING,
+                attempt_count=0,
+                last_error=None,
+                sent_at=None,
+            )
+            for channel in channels
+        ]
+
+        session.add_all(notification_channels)
+
+        return notification_channels
