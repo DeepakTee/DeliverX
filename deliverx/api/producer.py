@@ -3,6 +3,7 @@ from deliverx.configuration.database import get_db_session
 from fastapi import Depends
 from typing import Dict
 from deliverx.service.idempotency import Idempotency
+from deliverx.service.notification import NotificationService
 from fastapi import Header
 from deliverx.model.messages import MessageRequest
 from fastapi import APIRouter
@@ -19,5 +20,8 @@ async def notification_dispatch(
     is_served = await Idempotency.is_already_served(session, content.request_id)
     if is_served:
         return SUCCESS
-    # TODO: impl below one
-    return {"message": "Waiting for logic..."}
+
+    await NotificationService.create_notification(session, content, user_id)
+
+    return SUCCESS
+

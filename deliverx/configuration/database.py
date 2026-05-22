@@ -41,5 +41,7 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
 def ordered_table_defs():
     from deliverx.database.notifications import Notifications
+    from deliverx.database.notification_channels import NotificationChannels
+    from deliverx.database.outbox_events import OutboxEvents
 
 ordered_table_defs

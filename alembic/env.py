@@ -13,9 +13,6 @@ if config.config_file_name is not None:
 
 from deliverx.configuration.database import Base
 
-# Import all ORM models so they register with Base.metadata before autogenerate runs.
-from deliverx.database.notifications import Notifications  # noqa: F401
-
 target_metadata = Base.metadata
 
 

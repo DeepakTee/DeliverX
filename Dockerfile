@@ -7,7 +7,7 @@ WORKDIR /app
 ENV UV_PROJECT_ENVIRONMENT=/usr/local
 ENV UV_PYTHON_DOWNLOADS=never
 
-COPY pyproject.toml uv.lock .
+COPY pyproject.toml uv.lock ./
 
 RUN uv sync --frozen --no-dev --no-managed-python
 
