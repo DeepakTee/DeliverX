@@ -35,7 +35,7 @@ class OutboxEvents(Base):
     )
 
     @classmethod
-    async def create_notification_created(
+    async def create_outbox_event(
         cls,
         session: AsyncSession,
         notification_id: int,

@@ -25,7 +25,7 @@ class NotificationService:
             notification_id=notification.id_,
             channels=content.subscriptions,
         )
-        await OutboxEvents.create_notification_created(
+        await OutboxEvents.create_outbox_event(
             session=session,
             notification_id=notification.id_,
             payload=content.content,
