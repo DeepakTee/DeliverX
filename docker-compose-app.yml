@@ -1,8 +1,17 @@
 services:
-  deliverx:
+  deliverx-producer:
     image: deliverx:1.0
     build:
       context: .
+    ports:
+      - "8000:8000"
+    network_mode: "host"
+  
+  deliverx-consumer:
+    image: deliverx:1.0
+    build:
+      context: .
+    command: ["uv", "run", "python", "-m", "deliverx.scripts.start_kafka_consumer"]
     ports:
       - "8000:8000"
     network_mode: "host"

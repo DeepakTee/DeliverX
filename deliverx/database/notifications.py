@@ -32,7 +32,7 @@ class Notifications(Base):
     )
     trigger_event: Mapped[str] = mapped_column("tx_trigger_event", Text, nullable=True)
     status: Mapped[NotificationStatus] = mapped_column(
-        "status",
+        "tx_status",
         SqlEnum(
             NotificationStatus,
             name="notification_status_enum",
@@ -55,7 +55,7 @@ class Notifications(Base):
         content: dict,
         subscriptions: list[NotificationDeliveryMedium],
         trigger_event: str,
-        user_id: int,
+        user_id: str,
     ) -> "Notifications":
         notification = cls(
             request_id=request_id,

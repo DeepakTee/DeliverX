@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic import field_validator
 from deliverx.constant.subscription import NotificationDeliveryMedium
 from typing import List
@@ -8,7 +9,7 @@ class MessageRequest(BaseModel):
     request_id: str
 
     content: dict
-
+    priority: int = Field("Supports 1-10. 1 is most urgent and 10 is least urgent", ge=1, le=10)
     subscriptions: List[NotificationDeliveryMedium]
     trigger_event: str
 
@@ -26,4 +27,6 @@ class MessageRequest(BaseModel):
                         f"Invalid enum name '{value}'. "
                         f"Allowed: {list(NotificationDeliveryMedium.__members__.keys())}"
                     )
+                except Exception as e:
+                    raise e
         return conv
