@@ -2,7 +2,11 @@ from enum import Enum
 
 
 class NotificationDeliveryMedium(Enum):
-    EMAIL = 1
-    SMS = 2
-    WHATSAPP = 3
-    IN_APP = 4
+    EMAIL = "email"
+    SMS = "sms"
+    WHATSAPP = "whatsapp"
+    IN_APP = "in-app"
+
+    @property
+    def as_topic_name(self):
+        return "notifications__" + self.value

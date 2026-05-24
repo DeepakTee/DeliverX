@@ -6,6 +6,7 @@ WORKDIR /app
 
 ENV UV_PROJECT_ENVIRONMENT=/usr/local
 ENV UV_PYTHON_DOWNLOADS=never
+ENV PYTHONPATH=/app
 
 COPY pyproject.toml uv.lock ./
 

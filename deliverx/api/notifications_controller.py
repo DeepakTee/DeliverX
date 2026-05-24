@@ -14,14 +14,14 @@ router = APIRouter(prefix="/notifications")
 @router.post("")
 async def notification_dispatch(
     content: MessageRequest,
-    user_id: int = Header(alias="x-user-id"),
+    user_id: str = Header(alias="x-user-id"),
     session=Depends(get_db_session),
 ) -> Dict:
     is_served = await Idempotency.is_already_served(session, content.request_id)
     if is_served:
         return SUCCESS
 
-    await NotificationService.create_notification(session, content, user_id)
+    result = await NotificationService.handle_notification_creation(session, content, user_id)
 
+    
     return SUCCESS
-

@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DeliverX — Trigger notification</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 420px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      color: #e6edf3;
+      background: #0d1117;
+    }
+
+    h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin: 0 0 1.25rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #8b949e;
+      margin-bottom: 0.25rem;
+    }
+
+    input,
+    select {
+      width: 100%;
+      padding: 0.5rem 0.6rem;
+      margin-bottom: 0.85rem;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      font: inherit;
+      color: #e6edf3;
+      background: #0d1117;
+    }
+
+    input:focus,
+    select:focus {
+      outline: none;
+      border-color: #58a6ff;
+      box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.25);
+    }
+
+    fieldset {
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 0.6rem 0.75rem;
+      margin: 0 0 0.85rem;
+      background: #161b22;
+    }
+
+    fieldset legend {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #8b949e;
+      padding: 0 0.25rem;
+    }
+
+    .channels {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+    }
+
+    .channels label {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.85rem;
+      color: #e6edf3;
+      margin: 0;
+      cursor: pointer;
+    }
+
+    .channels input {
+      width: auto;
+      margin: 0;
+      accent-color: #238636;
+    }
+
+    .segmented {
+      display: flex;
+      gap: 0;
+      margin-bottom: 0.5rem;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #0d1117;
+    }
+
+    .segmented button {
+      flex: 1;
+      padding: 0.45rem 0.6rem;
+      border: none;
+      background: transparent;
+      color: #8b949e;
+      font: inherit;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .segmented button.active {
+      background: #238636;
+      color: #fff;
+    }
+
+    .segmented button:not(.active):hover {
+      background: #21262d;
+      color: #e6edf3;
+    }
+
+    .request-id-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.85rem;
+      padding: 0.45rem 0.6rem;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #161b22;
+      font-family: ui-monospace, monospace;
+      font-size: 0.72rem;
+      color: #8b949e;
+      word-break: break-all;
+    }
+
+    .request-id-row span.value {
+      color: #58a6ff;
+    }
+
+    .reset-link {
+      flex-shrink: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 0.72rem;
+      color: #58a6ff;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      text-decoration: underline;
+      display: none;
+    }
+
+    .reset-link.visible {
+      display: inline;
+    }
+
+    button[type="submit"] {
+      width: 100%;
+      padding: 0.6rem;
+      background: #238636;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font: inherit;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    button[type="submit"]:hover {
+      background: #2ea043;
+    }
+
+    button[type="submit"]:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    #status {
+      margin-top: 1rem;
+      padding: 0.6rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      display: none;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, monospace;
+    }
+
+    #status.ok {
+      display: block;
+      background: #1a3d2e;
+      color: #7ee787;
+      border: 1px solid #238636;
+    }
+
+    #status.err {
+      display: block;
+      background: #3d1a1a;
+      color: #ff7b72;
+      border: 1px solid #da3633;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Trigger notification</h1>
+  <form id="form">
+    <label for="userId">User ID (x-user-id)</label>
+    <input id="userId" name="userId" value="user-1" required />
+
+    <label>Request ID</label>
+    <div class="segmented" id="requestIdMode">
+      <button type="button" data-mode="unique" class="active">Unique</button>
+      <button type="button" data-mode="fixed">Fixed</button>
+    </div>
+    <div class="request-id-row">
+      <span>request_id: <span class="value" id="requestIdPreview">—</span></span>
+      <button type="button" class="reset-link" id="resetFixedId">Reset ID</button>
+    </div>
+
+    <label for="priority">Priority (1 = urgent, 10 = low)</label>
+    <select id="priority" name="priority">
+      <option value="1">1</option>
+      <option value="3">3</option>
+      <option value="5" selected>5</option>
+      <option value="7">7</option>
+      <option value="10">10</option>
+    </select>
+
+    <fieldset>
+      <legend>Channels</legend>
+      <div class="channels">
+        <label><input type="checkbox" name="channel" value="EMAIL" checked /> Email</label>
+        <label><input type="checkbox" name="channel" value="SMS" /> SMS</label>
+        <label><input type="checkbox" name="channel" value="WHATSAPP" /> WhatsApp</label>
+        <label><input type="checkbox" name="channel" value="IN_APP" /> In-app</label>
+      </div>
+    </fieldset>
+
+    <button type="submit" id="submitBtn">Send notification</button>
+  </form>
+  <div id="status" role="status"></div>
+
+  <script>
+    const STORAGE_KEY = "deliverx.fixedRequestId";
+    const form = document.getElementById("form");
+    const statusEl = document.getElementById("status");
+    const submitBtn = document.getElementById("submitBtn");
+    const requestIdPreview = document.getElementById("requestIdPreview");
+    const resetFixedIdBtn = document.getElementById("resetFixedId");
+    const modeButtons = document.querySelectorAll("#requestIdMode button");
+
+    let requestIdMode = "unique";
+    let fixedRequestId = localStorage.getItem(STORAGE_KEY);
+
+    const MESSAGE_TEMPLATES = [
+      { title: "Order #{n} shipped", body: "Your package left the warehouse and should arrive soon." },
+      { title: "Payment received", body: "We received ${n}.00 for your recent purchase. Thank you!" },
+      { title: "Password reset requested", body: "Use the link we sent to reset your password. Expires in 30 minutes." },
+      { title: "New login detected", body: "Someone signed in from Chrome on macOS. Was this you?" },
+      { title: "Delivery update", body: "Your order #{n} is out for delivery and should arrive today." },
+      { title: "Subscription renewed", body: "Your plan renewed successfully. Next billing date is next month." },
+      { title: "Item back in stock", body: "Good news — the item you wanted is available again. Order now!" },
+      { title: "Appointment reminder", body: "You have an appointment tomorrow at 10:00 AM. Reply YES to confirm." },
+    ];
+
+    function newRequestId() {
+      return crypto.randomUUID?.() || "req-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+    }
+
+    function ensureFixedRequestId() {
+      if (!fixedRequestId) {
+        fixedRequestId = newRequestId();
+        localStorage.setItem(STORAGE_KEY, fixedRequestId);
+      }
+      return fixedRequestId;
+    }
+
+    function resetFixedRequestId() {
+      fixedRequestId = newRequestId();
+      localStorage.setItem(STORAGE_KEY, fixedRequestId);
+      updateRequestIdPreview();
+    }
+
+    function randomInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    function generateRandomContent() {
+      const template = MESSAGE_TEMPLATES[randomInt(0, MESSAGE_TEMPLATES.length - 1)];
+      const n = randomInt(1000, 9999);
+      return {
+        title: template.title.replace("{n}", n),
+        body: template.body.replace("{n}", n),
+      };
+    }
+
+    function resolveRequestId() {
+      if (requestIdMode === "fixed") {
+        return ensureFixedRequestId();
+      }
+      return newRequestId();
+    }
+
+    function updateRequestIdPreview() {
+      if (requestIdMode === "fixed") {
+        requestIdPreview.textContent = ensureFixedRequestId();
+        resetFixedIdBtn.classList.add("visible");
+      } else {
+        requestIdPreview.textContent = "(new UUID on send)";
+        resetFixedIdBtn.classList.remove("visible");
+      }
+    }
+
+    function setRequestIdMode(mode) {
+      requestIdMode = mode;
+      modeButtons.forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.mode === mode);
+      });
+      updateRequestIdPreview();
+    }
+
+    function showStatus(text, ok) {
+      statusEl.textContent = text;
+      statusEl.className = ok ? "ok" : "err";
+    }
+
+    modeButtons.forEach((btn) => {
+      btn.addEventListener("click", () => setRequestIdMode(btn.dataset.mode));
+    });
+
+    resetFixedIdBtn.addEventListener("click", resetFixedRequestId);
+
+    updateRequestIdPreview();
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const channels = [...form.querySelectorAll('input[name="channel"]:checked')].map((el) => el.value);
+      if (!channels.length) {
+        showStatus("Select at least one channel.", false);
+        return;
+      }
+
+      const content = generateRandomContent();
+      const requestId = resolveRequestId();
+
+      const payload = {
+        request_id: requestId,
+        content,
+        priority: Number(document.getElementById("priority").value),
+        subscriptions: channels,
+        trigger_event: "ui.trigger",
+      };
+
+      submitBtn.disabled = true;
+      showStatus("Sending…", true);
+
+      try {
+        const res = await fetch("/rest/api/notifications", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": document.getElementById("userId").value.trim(),
+          },
+          body: JSON.stringify(payload),
+        });
+        const body = await res.text();
+        let parsed;
+        try { parsed = JSON.parse(body); } catch { parsed = body; }
+
+        if (res.ok) {
+          showStatus(
+            "Sent.\nrequest_id: " + payload.request_id +
+            "\ncontent: " + JSON.stringify(content) +
+            "\nresponse: " + (typeof parsed === "object" ? JSON.stringify(parsed, null, 2) : parsed),
+            true
+          );
+        } else {
+          showStatus(
+            "Error " + res.status + "\n" +
+            (typeof parsed === "object" ? JSON.stringify(parsed, null, 2) : parsed),
+            false
+          );
+        }
+      } catch (err) {
+        showStatus("Request failed: " + err.message, false);
+      } finally {
+        submitBtn.disabled = false;
+        if (requestIdMode === "unique") {
+          updateRequestIdPreview();
+        }
+      }
+    });
+  </script>
+</body>
+
+</html>

@@ -9,8 +9,6 @@ import asyncio
 
 pg_url = f'postgresql+asyncpg://{os.getenv("PG_USER")}:{os.getenv("PG_PASS")}@{os.getenv("PG_HOST")}:{os.getenv("PG_PORT")}/{os.getenv("PG_DB")}'
 
-logger.debug(f">> PG_URL: {pg_url}")
-
 engine = create_async_engine(
     pg_url,
     pool_size=100,
@@ -30,6 +28,7 @@ AsyncPostgresSession = async_sessionmaker(
 
 Base = declarative_base()
 
+
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncPostgresSession() as session:
         try:
@@ -39,9 +38,11 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
             await session.rollback()
             raise
 
+
 def ordered_table_defs():
     from deliverx.database.notifications import Notifications
     from deliverx.database.notification_channels import NotificationChannels
     from deliverx.database.outbox_events import OutboxEvents
 
-ordered_table_defs
+
+ordered_table_defs()
