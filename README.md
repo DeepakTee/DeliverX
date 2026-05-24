@@ -1,763 +1,392 @@
 # DeliverX
----
-# Distributed Notification & Delivery System — Requirements
 
-## 1. Goal
-
-Build a backend system that can reliably accept, process, and deliver notifications through multiple channels like email, SMS, and push.
-
-The project should demonstrate:
-
-* scalability
-* async processing
-* retries
-* idempotency
-* rate limiting
-* ordering
-* observability
-* distributed system tradeoffs
+A distributed notification delivery system built with **FastAPI**, **PostgreSQL**, and **Apache Kafka**. Clients submit multi-channel notification requests over HTTP; the API persists intent and publishes work to Kafka; worker consumers process deliveries asynchronously and update per-channel status in the database.
 
 ---
 
-# 2. Core Use Case
+## What it does today
 
-A client application sends a notification request:
+| Capability | Status |
+|------------|--------|
+| Submit notifications via REST API | ✅ |
+| Multi-channel fan-out (email, SMS, WhatsApp, in-app) | ✅ |
+| Async delivery via Kafka topics | ✅ |
+| PostgreSQL persistence (notification + per-channel rows) | ✅ |
+| Idempotency by `request_id` | ✅ |
+| Priority on messages (1 = most urgent, 10 = least) | ✅ (Kafka message key) |
+| Mock channel providers (latency + random failure) | ✅ |
+| Per-channel attempt tracking | ✅ |
+| Horizontally scalable Kafka consumers | ✅ (4 consumer containers in Compose) |
+| Web UI for manual testing | ✅ (`/ui`) |
+| OpenAPI / Swagger docs | ✅ (`/`) |
+| Health check | ✅ |
+| Transactional outbox | 🔲 Schema exists; publish is direct to Kafka today |
+| Dead letter queue | 🔲 Stub only (`DlqProducer`, `move_to_dlq` not wired) |
+| Status query API (`GET /notifications/{id}`) | 🔲 |
+| Rate limiting (Redis is provisioned in setup) | 🔲 |
+| Admin / DLQ replay APIs | 🔲 |
+| Metrics (Prometheus, etc.) | 🔲 |
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Client["Client / Web UI"]
+  API["FastAPI API\n:8000"]
+  PG[(PostgreSQL)]
+  K["Kafka\nnotifications__*"]
+  W["Kafka consumers\n(generic_kfk_consumer)"]
+
+  Client -->|POST /rest/api/notifications| API
+  API -->|persist notification + channels| PG
+  API -->|publish KafkaMessage| K
+  K --> W
+  W -->|update channel status| PG
+```
+
+**Request flow**
+
+1. Client sends `POST /rest/api/notifications` with a unique `request_id`, channel list, content, priority, and trigger event. Header `x-user-id` identifies the recipient user.
+2. **Idempotency** — if `request_id` already exists, the API returns success without creating duplicates.
+3. **Persistence** — a `notifications` row is created (`queued`) and one `notification_channels` row per selected channel (`pending`).
+4. **Publish** — for each channel, a `KafkaMessage` is sent to `notifications__{channel}` (e.g. `notifications__email`). Priority is used as the Kafka record key.
+5. **Consume** — workers in consumer group `notifications__consumer-group` read messages, run mock delivery, and set channel status to `delivered` or `failed`, incrementing `attempt_count` and recording `last_error` on failure.
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|-------|------------|
+| API | FastAPI, Uvicorn |
+| Database | PostgreSQL 17, SQLAlchemy 2 (async), Alembic |
+| Messaging | Apache Kafka 4.3 (`kafka-python` producer, `aiokafka` consumer) |
+| Runtime | Python 3.11+, [uv](https://github.com/astral-sh/uv) |
+| Containers | Docker Compose |
+
+Infrastructure started by `docker-compose-setup.yml`: PostgreSQL, Kafka, Redis (Redis is not used by application code yet).
+
+---
+
+## Running the project
+
+DeliverX is started with two shell scripts in the repo root. Run them **in order** from the project directory.
+
+### Quick start
+
+```bash
+# 1. Infrastructure (Postgres, Kafka, Redis) — detached
+./start-setup.sh
+
+# 2. Migrations + API + consumers — foreground (keeps this terminal open)
+./start-app.sh
+```
+
+Then open http://localhost:8000/ui/ or http://localhost:8000/ (Swagger).
+
+### Prerequisites
+
+- **Docker** and **Docker Compose**
+- **[uv](https://github.com/astral-sh/uv)** on the host — `start-app.sh` runs `uv run alembic upgrade head` **before** starting containers, so migrations need a local Python environment with project deps (`uv sync` once if needed)
+- A **`.env`** file in the project root (see below). Compose loads it for `start-setup.sh`; Alembic reads it for `start-app.sh`
+
+### Environment (`.env`)
+
+Create `.env` in the repo root before running either script:
+
+```env
+PG_USER=deliverx
+PG_PASS=deliverx
+PG_HOST=localhost
+PG_PORT=5432
+PG_DB=DELIVERX
+```
+
+`docker-compose-setup.yml` substitutes `PG_USER`, `PG_PASS`, and `PG_DB` into the Postgres service. The app and Alembic use the same variables to connect to Postgres on `localhost:5432`.
+
+Optional (consumers only):
+
+```env
+FAILURE_PCT_IN_CONSUMERS=0.9   # mock failure rate (0–1); default 0.9
+```
+
+### `start-setup.sh` — infrastructure
+
+```bash
+./start-setup.sh
+```
+
+What it runs:
+
+```bash
+docker compose -p deliverx-setup -f docker-compose-setup.yml up -d --wait
+```
+
+| | |
+|--|--|
+| **Compose project** | `deliverx-setup` |
+| **Mode** | Detached (`-d`); exits when services are up |
+| **Wait** | `--wait` blocks until healthchecks pass (Postgres, Redis) |
+
+**Services started**
+
+| Service | Port | Notes |
+|---------|------|--------|
+| PostgreSQL 17 | `5432` | Init SQL from `db-skeleton/` on first volume create |
+| Apache Kafka 4.3 | `9092` | Advertised as `localhost:9092` for host clients |
+| Redis 8 | `6379` | Not used by app code yet |
+
+Stop infrastructure:
+
+```bash
+docker compose -p deliverx-setup -f docker-compose-setup.yml down
+```
+
+### `start-app.sh` — migrations + application
+
+Run **after** `start-setup.sh` (Kafka and Postgres must already be listening on localhost).
+
+```bash
+./start-app.sh
+```
+
+What it runs, in order:
+
+1. **`uv run alembic upgrade head`** — applies DB migrations on the **host**, using `.env` to reach Postgres at `localhost:5432`
+2. **`docker compose -p deliverx -f docker-compose-app.yml up --build --remove-orphans`** — builds image `deliverx:1.0` and starts the app stack
+
+| | |
+|--|--|
+| **Compose project** | `deliverx` (separate from `deliverx-setup`) |
+| **Mode** | **Foreground** (no `-d`) — logs stream in this terminal; Ctrl+C stops the stack |
+| **Build** | `--build` rebuilds the image when the Dockerfile or context changes |
+
+**Services started**
+
+| Service | Role |
+|---------|------|
+| `deliverx-producer` | FastAPI + Uvicorn on port **8000** (default image `CMD`) |
+| `deliverx-consumer-1` … `4` | Same image; `python -m deliverx.scripts.start_kafka_consumer` |
+
+App containers use **`network_mode: host`**, so they talk to Postgres and Kafka on `localhost` like the host-run Alembic step. Kafka topics are created on first produce (`notifications__email`, `notifications__sms`, `notifications__whatsapp`, `notifications__in-app`).
+
+Stop the application (separate terminal, or after Ctrl+C):
+
+```bash
+docker compose -p deliverx -f docker-compose-app.yml down
+```
+
+### Try it
+
+| URL | Purpose |
+|-----|---------|
+| http://localhost:8000/ | Swagger UI |
+| http://localhost:8000/ui/ | Test form (channels, priority, idempotency modes) |
+| http://localhost:8000/rest/api/health | Health check |
+
+#### Web UI
+
+Open [http://localhost:8000/ui/](http://localhost:8000/ui/) to send test notifications without curl. The form maps directly to `POST /rest/api/notifications`.
+
+![DeliverX web UI — trigger notification form](docs/assets/ui.png)
+
+| Control | Purpose |
+|---------|---------|
+| **User ID** | Sent as `x-user-id` header |
+| **Request ID → Unique / Fixed** | Unique generates a new UUID per send; Fixed reuses one id to demo idempotency |
+| **Priority** | 1 (urgent) through 10 (low) |
+| **Channels** | Email, SMS, WhatsApp, In-app (multi-select) |
+| **Send notification** | POSTs with random sample title/body; shows `request_id`, content, and API response below |
+
+### Run API or consumer outside Docker
+
+```bash
+uv sync
+uv run alembic upgrade head
+
+# API
+uv run uvicorn deliverx.main:app --host 0.0.0.0 --port 8000
+
+# Consumer (separate terminal; Kafka + Postgres must be up)
+uv run python -m deliverx.scripts.start_kafka_consumer
+```
+
+---
+
+## API
+
+Base path: `/rest/api`
+
+### `POST /notifications`
+
+Enqueue a notification for async delivery.
+
+**Headers**
+
+| Header | Required | Description |
+|--------|----------|-------------|
+| `x-user-id` | Yes | Target user identifier |
+| `Content-Type` | Yes | `application/json` |
+
+**Body**
 
 ```json
 {
-  "user_id": "user_123",
   "request_id": "req_abc_001",
-  "channels": ["email", "sms"],
-  "priority": "high",
-  "template_id": "payment_success",
-  "payload": {
-    "amount": 1200,
-    "merchant": "Amazon"
-  }
+  "content": {
+    "title": "Payment received",
+    "body": "We received $12.00 for your purchase."
+  },
+  "priority": 1,
+  "subscriptions": ["EMAIL", "SMS"],
+  "trigger_event": "payment.success"
 }
 ```
 
-The system should:
+| Field | Type | Description |
+|-------|------|-------------|
+| `request_id` | string | Unique idempotency key (per submission) |
+| `content` | object | Arbitrary JSON payload delivered to workers |
+| `priority` | int | 1 (highest) – 10 (lowest) |
+| `subscriptions` | string[] | Channel enum names: `EMAIL`, `SMS`, `WHATSAPP`, `IN_APP` |
+| `trigger_event` | string | Event name for auditing / routing |
 
-1. accept the request
-2. validate it
-3. store notification intent
-4. publish it to a queue
-5. process it asynchronously
-6. send through selected channels
-7. retry on failure
-8. avoid duplicate sends
-9. track delivery status
-10. expose delivery status through API
-
----
-
-# 3. Functional Requirements
-
-## 3.1 Notification Submission API
-
-Create an API to submit notification requests.
-
-### Endpoint
-
-```http
-POST /notifications
-```
-
-### Requirements
-
-The API should:
-
-* accept notification requests
-* validate required fields
-* generate notification ID if not provided
-* support client-provided `request_id` for idempotency
-* store the request in database
-* publish event to queue
-* return immediately without sending the notification directly
-
-### Response
+**Response** `200`
 
 ```json
-{
-  "notification_id": "notif_123",
-  "status": "queued"
-}
+{ "message": "ACTION.SUCCESS" }
+```
+
+Duplicate `request_id` returns the same success response without re-enqueueing.
+
+**Example**
+
+```bash
+curl -s -X POST http://localhost:8000/rest/api/notifications \
+  -H "Content-Type: application/json" \
+  -H "x-user-id: user_123" \
+  -d '{
+    "request_id": "req_demo_001",
+    "content": { "title": "Hello", "body": "World" },
+    "priority": 3,
+    "subscriptions": ["EMAIL", "IN_APP"],
+    "trigger_event": "demo.trigger"
+  }'
+```
+
+### `GET /health`
+
+```bash
+curl http://localhost:8000/rest/api/health
+```
+
+Returns a plain-text confirmation that the API process is up.
+
+---
+
+## Data model
+
+### `notifications`
+
+| Column (DB) | Role |
+|-------------|------|
+| `id_notification` | Primary key |
+| `id_api_request` | Unique `request_id` (idempotency) |
+| `id_user` | User from `x-user-id` |
+| `js_content` | Notification payload |
+| `arr_types` | Selected channels |
+| `tx_trigger_event` | Event name |
+| `tx_status` | `queued`, `processing`, `partially_delivered`, `delivered`, `failed`, `cancelled` |
+| `ts_created_on` | Created timestamp |
+
+### `notification_channels`
+
+One row per channel on a notification.
+
+| Column (DB) | Role |
+|-------------|------|
+| `id_notification_channel` | Primary key |
+| `id_notification` | FK to notification |
+| `tx_channel` | `email`, `sms`, `whatsapp`, `in-app` |
+| `tx_status` | `pending`, `delivered`, `failed`, etc. |
+| `nu_attempt_count` | Delivery attempts |
+| `tx_last_error` | Last failure message |
+| `ts_sent_at` | Set when delivered |
+| `ts_created_at` / `ts_updated_at` | Timestamps |
+
+### `outbox_events`
+
+Table and SQLAlchemy model exist for a future transactional outbox; the live path publishes directly to Kafka after DB writes.
+
+---
+
+## Kafka
+
+| Topic | Channel |
+|-------|---------|
+| `notifications__email` | Email |
+| `notifications__sms` | SMS |
+| `notifications__whatsapp` | WhatsApp |
+| `notifications__in-app` | In-app |
+
+- **Producer**: `deliverx.producer.outbox_event.OutboxEvent` (sync `kafka-python`)
+- **Consumer group**: `notifications__consumer-group`
+- **Message value**: JSON `KafkaMessage` — `{ id_, priority, content, type_ }` where `id_` is the `notification_channels` row id
+
+Consumers simulate 3–6s delivery latency and probabilistic failure (`FAILURE_PCT_IN_CONSUMERS`). After `MAX_ATTEMPTS` (5) failures, DLQ handling is intended but not yet implemented.
+
+---
+
+## Project layout
+
+```text
+deliverx/
+  api/                    # FastAPI routers (notifications, health)
+  configuration/          # DB engine, app constants
+  consumer/               # GenericKafkaConsumer
+  database/               # SQLAlchemy models
+  model/                  # Pydantic request/Kafka models
+  producer/               # Kafka producer, DLQ stub
+  scripts/                # Consumer entrypoint, topic utilities
+  service/                # Notification + idempotency logic
+  static/                 # Web UI
+alembic/                  # Schema migrations
+db-skeleton/              # Postgres init on first container start
+docker-compose-setup.yml  # Used by start-setup.sh
+docker-compose-app.yml    # Used by start-app.sh
+start-setup.sh            # deliverx-setup: Postgres, Kafka, Redis (detached)
+start-app.sh              # alembic on host, then deliverx: API + 4 consumers (foreground)
 ```
 
 ---
 
-## 3.2 Idempotency
+## Design notes & tradeoffs
 
-The system must prevent duplicate notification creation and duplicate delivery.
+**Idempotency** — Enforced at ingest via unique `id_api_request`. Replayed Kafka messages could still re-attempt delivery unless workers add send-side deduplication (not implemented yet).
 
-### Requirements
+**Consistency** — Notification and channel rows are written in the API transaction; Kafka publish happens after flush without a transactional outbox, so a crash between commit and publish can leave rows without a matching queue message.
 
-* `request_id` should be unique per client/user
-* if same `request_id` is submitted again, return original notification response
-* workers should also check if a notification/channel has already been sent before sending again
-* duplicate queue messages should not cause duplicate delivery
+**Scaling** — API and consumers are stateless; Kafka uses 4 partitions by default in setup compose. Multiple consumer containers share one consumer group for parallel processing.
 
-### Example
-
-If this request is sent twice:
-
-```json
-{
-  "request_id": "req_001",
-  "user_id": "user_123"
-}
-```
-
-Only one notification should be created and delivered.
+**Priority** — Numeric priority is attached to Kafka records as the key; full priority-queue semantics across topics are not implemented yet.
 
 ---
 
-## 3.3 Queue-Based Async Processing
+## Roadmap
 
-Notification delivery must happen asynchronously.
+Planned next steps aligned with the original system goals:
 
-### Requirements
-
-* API service should publish messages to Kafka/Redpanda/RabbitMQ
-* worker services should consume messages
-* API should not block on actual email/SMS/push delivery
-* workers should update notification status after processing
-
-### Suggested Topics/Queues
-
-```text
-notifications.high
-notifications.normal
-notifications.low
-notifications.dlq
-```
+- Transactional outbox publisher (`outbox_events` → Kafka)
+- Dead letter queue storage and admin replay API
+- `GET /notifications/{id}` and aggregate status rollups
+- Redis-backed rate limiting
+- Retry with backoff and re-publish to Kafka
+- Per-user ordering via partition keys
+- Metrics and structured observability
 
 ---
 
-## 3.4 Multi-Channel Delivery
 
-Support multiple notification channels.
 
-### Channels
-
-* email
-* SMS
-* push
-
-### Requirements
-
-One notification request may create multiple delivery tasks.
-
-Example:
-
-```json
-"channels": ["email", "sms"]
-```
-
-This should create:
-
-```text
-email delivery task
-sms delivery task
-```
-
-Each channel should have independent status.
-
----
-
-## 3.5 Delivery Status Tracking
-
-Track status at both notification level and channel level.
-
-### Notification statuses
-
-```text
-queued
-processing
-partially_delivered
-delivered
-failed
-cancelled
-```
-
-### Channel statuses
-
-```text
-pending
-processing
-sent
-failed
-retrying
-dead_lettered
-```
-
-### Endpoint
-
-```http
-GET /notifications/{notification_id}
-```
-
-### Response
-
-```json
-{
-  "notification_id": "notif_123",
-  "status": "partially_delivered",
-  "channels": {
-    "email": "sent",
-    "sms": "retrying"
-  }
-}
-```
-
----
-
-## 3.6 Retry System
-
-Failed deliveries should be retried automatically.
-
-### Requirements
-
-* retry failed channel delivery
-* use exponential backoff
-* max retry count should be configurable
-* after max retries, move message to DLQ
-* store retry count
-* store last failure reason
-
-### Example retry policy
-
-```text
-Attempt 1: immediate
-Attempt 2: after 10 seconds
-Attempt 3: after 30 seconds
-Attempt 4: after 2 minutes
-After that: move to DLQ
-```
-
----
-
-## 3.7 Dead Letter Queue
-
-Messages that cannot be delivered after retries should go to DLQ.
-
-### Requirements
-
-* failed messages should be stored in DLQ topic/table
-* admin should be able to inspect failed messages
-* admin should be able to replay DLQ messages
-
-### Endpoints
-
-```http
-GET /admin/dlq
-POST /admin/dlq/{message_id}/replay
-```
-
----
-
-## 3.8 Rate Limiting
-
-Prevent abuse and overload.
-
-### Requirements
-
-Apply rate limits on:
-
-* per user
-* per channel
-* per notification type
-* global system level
-
-### Example limits
-
-```text
-OTP: 5 per user per 10 minutes
-Marketing: 10 per user per day
-Email provider: 100 requests per minute
-SMS provider: 50 requests per minute
-```
-
-If limit is exceeded, system should either:
-
-* reject the request
-* delay processing
-* queue for later
-
-Document your chosen behavior.
-
----
-
-## 3.9 Priority Handling
-
-High-priority notifications should be processed before low-priority ones.
-
-### Priority levels
-
-```text
-high
-normal
-low
-```
-
-### Examples
-
-```text
-OTP: high
-Payment alert: high
-Order update: normal
-Marketing: low
-```
-
-### Requirements
-
-* workers should prefer high-priority queues
-* low-priority notifications should not block high-priority ones
-* priority should be visible in stored records
-
----
-
-## 3.10 Ordering Per User
-
-Maintain ordering for notifications belonging to the same user where required.
-
-### Requirement
-
-For a given user, notifications marked as `ordering_required=true` should be processed in order.
-
-### Example
-
-Correct order:
-
-```text
-payment_initiated
-payment_success
-receipt_generated
-```
-
-Wrong order:
-
-```text
-receipt_generated
-payment_initiated
-payment_success
-```
-
-### Implementation expectation
-
-Use partitioning strategy:
-
-```text
-partition key = user_id
-```
-
-Document the tradeoff:
-
-* ordering per user
-* not global ordering
-* parallelism still possible across users
-
----
-
-# 4. Non-Functional Requirements
-
-## 4.1 Scalability
-
-The system should support horizontal scaling.
-
-### Requirements
-
-* multiple API instances
-* multiple worker instances
-* multiple queue partitions
-* Redis/Postgres should not become immediate bottleneck
-* workers should be stateless where possible
-
-### Load test target
-
-For local simulation:
-
-```text
-100k notification requests
-1k–5k requests/minute
-multiple workers running in parallel
-```
-
----
-
-## 4.2 Reliability
-
-System should handle failures gracefully.
-
-### Failure cases to support
-
-* worker crashes after consuming message
-* queue temporarily unavailable
-* provider API fails
-* database write fails
-* duplicate messages arrive
-* Redis unavailable
-* partial channel failure
-
-For each case, document:
-
-```text
-What happens?
-How does system recover?
-Is duplicate delivery possible?
-Is data loss possible?
-```
-
----
-
-## 4.3 Consistency
-
-The system should use eventual consistency.
-
-### Requirement
-
-API may return:
-
-```text
-queued
-```
-
-even though delivery happens later.
-
-### Expected behavior
-
-* notification request is stored first
-* event is published after/with durable storage
-* worker updates final state later
-* status API reflects latest known state
-
-### Important design decision
-
-Use either:
-
-1. transactional outbox pattern, or
-2. careful DB-write-then-publish with recovery job
-
-Preferred: **transactional outbox pattern**.
-
----
-
-## 4.4 Observability
-
-Add logs, metrics, and tracing-friendly structure.
-
-### Logs should include
-
-* notification_id
-* request_id
-* user_id
-* channel
-* attempt number
-* status
-* failure reason
-
-### Metrics to expose
-
-```text
-notifications_received_total
-notifications_delivered_total
-notifications_failed_total
-notification_retry_total
-dlq_messages_total
-delivery_latency_ms
-queue_lag
-worker_processing_time_ms
-```
-
----
-
-## 4.5 Performance
-
-### Requirements
-
-* API response should be fast because delivery is async
-* target API latency: under 100–200 ms locally
-* delivery latency should be measured
-* queue lag should be observable
-* workers should support batch consumption if possible
-
----
-
-# 5. Data Model
-
-## 5.1 notifications table
-
-```text
-id
-request_id
-user_id
-template_id
-priority
-status
-ordering_required
-created_at
-updated_at
-```
-
-## 5.2 notification_channels table
-
-```text
-id
-notification_id
-channel
-status
-attempt_count
-last_error
-sent_at
-created_at
-updated_at
-```
-
-## 5.3 outbox_events table
-
-```text
-id
-aggregate_id
-event_type
-payload
-status
-created_at
-published_at
-```
-
-## 5.4 dlq_messages table
-
-```text
-id
-notification_id
-channel
-payload
-failure_reason
-attempt_count
-created_at
-replayed_at
-```
-
-## 5.5 rate_limits table/cache
-
-Can be Redis-based.
-
-```text
-key
-count
-expiry
-```
-
----
-
-# 6. APIs
-
-## Public APIs
-
-```http
-POST /notifications
-GET /notifications/{notification_id}
-GET /users/{user_id}/notifications
-```
-
-## Admin APIs
-
-```http
-GET /admin/dlq
-POST /admin/dlq/{message_id}/replay
-GET /admin/metrics
-GET /admin/health
-```
-
----
-
-# 7. Worker Requirements
-
-Create separate workers or logical processors for:
-
-```text
-email_worker
-sms_worker
-push_worker
-retry_worker
-outbox_publisher
-dlq_replay_worker
-```
-
-Each worker should:
-
-* consume messages
-* validate idempotency
-* call mock provider
-* update status
-* retry on failure
-* log structured events
-
----
-
-# 8. Mock Providers
-
-Do not integrate real SMS/email initially.
-
-Create mock providers that simulate:
-
-* success
-* temporary failure
-* permanent failure
-* timeout
-* slow response
-
-Example:
-
-```text
-90% success
-5% temporary failure
-3% timeout
-2% permanent failure
-```
-
-This makes the system easier to test.
-
----
-
-# 9. Testing Requirements
-
-## Unit Tests
-
-Test:
-
-* request validation
-* idempotency logic
-* retry policy
-* rate limiting
-* status transitions
-
-## Integration Tests
-
-Test:
-
-* API → DB → queue → worker → status update
-* duplicate request handling
-* provider failure and retry
-* DLQ movement
-* DLQ replay
-
-## Load Tests
-
-Simulate:
-
-```text
-10k requests
-100k requests
-multiple users
-multiple channels
-mixed priority
-```
-
-Measure:
-
-* throughput
-* latency
-* retry count
-* failure rate
-* queue lag
-
----
-
-# 10. Documentation Requirements
-
-Your README should include:
-
-1. project overview
-2. architecture diagram
-3. system components
-4. API examples
-5. data model
-6. queue design
-7. retry design
-8. idempotency design
-9. consistency model
-10. failure scenarios
-11. scaling strategy
-12. tradeoffs
-13. local setup
-14. load test results
-15. future improvements
-
----
-
-# 11. Recommended Tech Stack
-
-Since your background is backend/Python/FastAPI:
-
-```text
-API: FastAPI
-Workers: Python workers / Celery optional
-Queue: Kafka or Redpanda
-DB: PostgreSQL
-Cache/rate limit: Redis
-Containerization: Docker Compose
-Load testing: k6 or Locust
-Observability: Prometheus + Grafana optional
-```
-
-Use **Redpanda** if you want Kafka-like behavior with easier local setup.
-
----
-
-# 12. MVP Scope
-
-Build this first:
-
-```text
-POST /notifications
-GET /notifications/{id}
-Postgres persistence
-queue publishing
-one email worker
-mock email provider
-idempotency by request_id
-retry 3 times
-DLQ table
-basic logs
-Docker Compose setup
-```
-
-Then expand to:
-
-```text
-SMS/push
-priority queues
-rate limiting
-ordering
-outbox pattern
-metrics
-load testing
-DLQ replay
-```
-
----
-
-# 13. Success Criteria
-
-Project is complete when you can demonstrate:
-
-* submit 100k notifications locally
-* workers process asynchronously
-* failed messages retry automatically
-* permanently failed messages move to DLQ
-* duplicate requests do not create duplicate sends
-* high-priority messages process before low-priority ones
-* status API shows accurate delivery state
-* README explains tradeoffs clearly
-
----
-
-# 14. Resume Positioning
-
-Once complete, you can describe it like this:
-
-> Built a distributed notification delivery system using FastAPI, Kafka/Redpanda, PostgreSQL, and Redis, supporting asynchronous processing, idempotent delivery, retries, DLQ replay, priority queues, per-user ordering, and rate limiting. Simulated 100k+ notification events with horizontally scalable workers and documented consistency, reliability, and scaling tradeoffs.
-
----
