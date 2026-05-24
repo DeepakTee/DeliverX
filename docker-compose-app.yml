@@ -7,7 +7,8 @@ services:
       - "8000:8000"
     network_mode: "host"
   
-  deliverx-consumer:
+  
+  deliverx-consumer-1:
     image: deliverx:1.0
     build:
       context: .
@@ -15,3 +16,28 @@ services:
     ports:
       - "8000:8000"
     network_mode: "host"
+  deliverx-consumer-2:
+    image: deliverx:1.0
+    build:
+      context: .
+    command: ["uv", "run", "python", "-m", "deliverx.scripts.start_kafka_consumer"]
+    ports:
+      - "8000:8000"
+    network_mode: "host"
+  deliverx-consumer-3:
+    image: deliverx:1.0
+    build:
+      context: .
+    command: ["uv", "run", "python", "-m", "deliverx.scripts.start_kafka_consumer"]
+    ports:
+      - "8000:8000"
+    network_mode: "host"
+  deliverx-consumer-4:
+    image: deliverx:1.0
+    build:
+      context: .
+    command: ["uv", "run", "python", "-m", "deliverx.scripts.start_kafka_consumer"]
+    ports:
+      - "8000:8000"
+    network_mode: "host"
+  
