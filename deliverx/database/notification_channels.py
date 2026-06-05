@@ -4,7 +4,7 @@ from deliverx.configuration.database import Base
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import mapped_column, Mapped
 from sqlalchemy.types import Integer, String, DateTime
-from sqlalchemy import Enum as SqlEnum, ForeignKey
+from sqlalchemy import Enum as SqlEnum, ForeignKey, select
 from datetime import datetime
 
 
@@ -66,3 +66,17 @@ class NotificationChannels(Base):
         await session.commit()
 
         return notification_channels
+
+    @classmethod
+    async def get_by_notification_ids(
+        cls,
+        session: AsyncSession,
+        notification_ids: list[int],
+    ) -> list["NotificationChannels"]:
+        stmt = select(cls).where(cls.notification_id.in_(notification_ids))
+        exec_result = await session.execute(stmt)
+        result = exec_result.scalars().all()
+
+        return result
+
+    

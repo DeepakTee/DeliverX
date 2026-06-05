@@ -17,5 +17,5 @@ class OutboxEvent:
         self.kafka_producer.send(
             topic=self.PREFIX + type_.value,
             value=message,
-            key=message.priority,
+            key=type_.value,
         )

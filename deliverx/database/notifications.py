@@ -73,9 +73,21 @@ class Notifications(Base):
     @classmethod
     async def get_by_request_id(
         cls, session: AsyncSession, request_id: int
-    ) -> "Notifications":
+    ) -> list["Notifications"]:
         stmt = select(cls).where(cls.request_id == request_id)
         exec_result = await session.execute(stmt)
         result = exec_result.scalars().all()
 
         return result
+
+    @classmethod
+    async def get_by_user_id(
+        cls, session: AsyncSession, user_id: str
+    ) -> list["Notifications"]:
+        stmt = select(cls).where(cls.user_id == user_id)
+        exec_result = await session.execute(stmt)
+        result = exec_result.scalars().all()
+
+        return result
+
+        
