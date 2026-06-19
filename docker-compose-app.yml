@@ -1,4 +1,8 @@
 services:
+  redis:
+    image: redis:7
+    network_mode: "host"
+
   deliverx-producer:
     image: deliverx:1.0
     build:
@@ -51,6 +55,15 @@ services:
     command: ["uv", "run", "python", "deliverx/scripts/start_kafka_consumer.py"]
     ports:
       - "8000:8000"
+    network_mode: "host"
+    volumes:
+      - ./app-logs:/app/app-logs
+
+  deliverx-celery-beat:
+    image: deliverx:1.0
+    build:
+      context: .
+    command: ["uv", "run", "celery", "-A", "deliverx.configuration.celery_app:celery_app", "worker", "--beat", "--loglevel=info"]
     network_mode: "host"
     volumes:
       - ./app-logs:/app/app-logs

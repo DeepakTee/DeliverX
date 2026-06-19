@@ -14,8 +14,9 @@ class OutboxEvent:
         )
 
     def send_message(self, /, message: KafkaMessage, type_: NotificationDeliveryMedium):
-        self.kafka_producer.send(
+        future = self.kafka_producer.send(
             topic=self.PREFIX + type_.value,
             value=message,
             key=type_.value,
         )
+        future.get(timeout=10)

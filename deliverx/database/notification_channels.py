@@ -63,7 +63,7 @@ class NotificationChannels(Base):
         ]
 
         session.add_all(notification_channels)
-        await session.commit()
+        await session.flush()
 
         return notification_channels
 

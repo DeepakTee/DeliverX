@@ -1,12 +1,9 @@
-from deliverx.model.kafka_message import KafkaMessage
-from deliverx.producer.outbox_event import OutboxEvent
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from deliverx.database.outbox_events import OutboxEvents
 from deliverx.database.notification_channels import NotificationChannels
 from deliverx.database.notifications import Notifications
 from deliverx.model.messages import MessageRequest
-
-KAFKA_PRODUCER = OutboxEvent()
 
 
 class NotificationService:
@@ -14,7 +11,7 @@ class NotificationService:
     @staticmethod
     async def handle_notification_creation(
         session: AsyncSession, content: MessageRequest, user_id: str
-    ) -> Notifications:
+    ) -> tuple[Notifications, list[int]]:
         notification = await Notifications.create(
             session=session,
             request_id=content.request_id,
@@ -30,15 +27,20 @@ class NotificationService:
             channels=content.subscriptions,
         )
         mapped_channel_ids = {channel.channel: channel.id_ for channel in channels}
+        outbox_event_ids: list[int] = []
+
         for channel in content.subscriptions:
             channel_id = mapped_channel_ids.get(channel)
-            kafka_message = KafkaMessage(id_=channel_id, priority=content.priority, content=content.content, type_=channel)
-            KAFKA_PRODUCER.send_message(kafka_message, channel)
+            outbox_event = await OutboxEvents.create_outbox_event(
+                session=session,
+                notification_id=notification.id_,
+                payload={
+                    "id_": channel_id,
+                    "priority": content.priority,
+                    "content": content.content,
+                    "type_": channel.value,
+                },
+            )
+            outbox_event_ids.append(outbox_event.id_)
 
-        # await OutboxEvents.create_outbox_event(
-        #     session=session,
-        #     notification_id=notification.id_,
-        #     payload=content.content,
-        # )
-
-        return notification
+        return notification, outbox_event_ids
