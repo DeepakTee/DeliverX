@@ -13,7 +13,7 @@ from aiokafka import AIOKafkaConsumer
 import os
 import time
 
-failure_pct_threshold = os.getenv("FAILURE_PCT_IN_CONSUMERS", 0.9)
+failure_pct_threshold = os.getenv("FAILURE_PCT_IN_CONSUMERS", 0.8)
 
 
 class GenericKafkaConsumer:
