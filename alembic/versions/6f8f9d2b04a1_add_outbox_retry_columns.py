@@ -1,7 +1,7 @@
 """add outbox retry columns
 
 Revision ID: 6f8f9d2b04a1
-Revises: 42d6b98cfe7f
+Revises: 1116845fdec8
 Create Date: 2026-06-16 00:00:00.000000
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision: str = "6f8f9d2b04a1"
-down_revision: Union[str, Sequence[str], None] = "42d6b98cfe7f"
+down_revision: Union[str, Sequence[str], None] = "1116845fdec8"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
