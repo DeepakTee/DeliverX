@@ -8,6 +8,7 @@ import random
 from time import sleep
 from deliverx.model.kafka_message import KafkaMessage
 from loguru import logger
+from deliverx.constant.subscription import NotificationPriorityTier
 from deliverx.constant.subscription import NotificationDeliveryMedium
 from aiokafka import AIOKafkaConsumer
 import os
@@ -20,10 +21,9 @@ class GenericKafkaConsumer:
 
     def __init__(self):
         self.kfk_consumer = AIOKafkaConsumer(
-            NotificationDeliveryMedium.EMAIL.as_topic_name,
-            NotificationDeliveryMedium.SMS.as_topic_name,
-            NotificationDeliveryMedium.WHATSAPP.as_topic_name,
-            NotificationDeliveryMedium.IN_APP.as_topic_name,
+            NotificationPriorityTier.HIGH.as_topic_name,
+            NotificationPriorityTier.MEDIUM.as_topic_name,
+            NotificationPriorityTier.LOW.as_topic_name,
             bootstrap_servers="localhost:9092",
             auto_offset_reset="earliest",
             enable_auto_commit=True,

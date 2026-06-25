@@ -17,159 +17,82 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _column_names(table: str) -> set[str]:
+    inspector = sa.inspect(op.get_bind())
+    return {column["name"] for column in inspector.get_columns(table)}
+
+
+def _rename_column_if_needed(table: str, old_name: str, new_name: str) -> None:
+    columns = _column_names(table)
+    if old_name in columns and new_name not in columns:
+        op.alter_column(table, old_name, new_column_name=new_name)
+
+
 def upgrade() -> None:
-    """Rename unprefixed columns to prefixed names (preserves existing row data)."""
-    op.alter_column(
-        'notification_channels',
-        'channel',
-        new_column_name='tx_channel',
-    )
-    op.alter_column(
-        'notification_channels',
-        'status',
-        new_column_name='tx_status',
-    )
-    op.alter_column(
-        'notification_channels',
-        'attempt_count',
-        new_column_name='nu_attempt_count',
-    )
-    op.alter_column(
-        'notification_channels',
-        'last_error',
-        new_column_name='tx_last_error',
-    )
-    op.alter_column(
-        'notification_channels',
-        'sent_at',
-        new_column_name='ts_sent_at',
-    )
-    op.alter_column(
-        'notification_channels',
-        'created_at',
-        new_column_name='ts_created_at',
-    )
-    op.alter_column(
-        'notification_channels',
-        'updated_at',
-        new_column_name='ts_updated_at',
-    )
+    """Rename unprefixed columns when upgrading from older e50e2393920e schemas."""
+    for old_name, new_name in (
+        ("channel", "tx_channel"),
+        ("status", "tx_status"),
+        ("attempt_count", "nu_attempt_count"),
+        ("last_error", "tx_last_error"),
+        ("sent_at", "ts_sent_at"),
+        ("created_at", "ts_created_at"),
+        ("updated_at", "ts_updated_at"),
+    ):
+        _rename_column_if_needed("notification_channels", old_name, new_name)
 
-    op.alter_column(
-        'notifications',
-        'id_user',
-        existing_type=sa.INTEGER(),
-        type_=sa.Text(),
-        existing_nullable=False,
-        postgresql_using='id_user::text',
-    )
+    notification_columns = _column_names("notifications")
+    if "id_user" in notification_columns:
+        op.alter_column(
+            "notifications",
+            "id_user",
+            existing_type=sa.INTEGER(),
+            type_=sa.Text(),
+            existing_nullable=False,
+            postgresql_using="id_user::text",
+        )
 
-    op.alter_column(
-        'outbox_events',
-        'aggregate_id',
-        new_column_name='id_aggregate',
-    )
-    op.alter_column(
-        'outbox_events',
-        'event_type',
-        new_column_name='tx_event_type',
-    )
-    op.alter_column(
-        'outbox_events',
-        'payload',
-        new_column_name='js_payload',
-    )
-    op.alter_column(
-        'outbox_events',
-        'status',
-        new_column_name='tx_status',
-    )
-    op.alter_column(
-        'outbox_events',
-        'created_at',
-        new_column_name='ts_created_at',
-    )
-    op.alter_column(
-        'outbox_events',
-        'published_at',
-        new_column_name='ts_published_at',
-    )
+    for old_name, new_name in (
+        ("aggregate_id", "id_aggregate"),
+        ("event_type", "tx_event_type"),
+        ("payload", "js_payload"),
+        ("status", "tx_status"),
+        ("created_at", "ts_created_at"),
+        ("published_at", "ts_published_at"),
+    ):
+        _rename_column_if_needed("outbox_events", old_name, new_name)
 
 
 def downgrade() -> None:
-    """Restore unprefixed column names."""
-    op.alter_column(
-        'outbox_events',
-        'ts_published_at',
-        new_column_name='published_at',
-    )
-    op.alter_column(
-        'outbox_events',
-        'ts_created_at',
-        new_column_name='created_at',
-    )
-    op.alter_column(
-        'outbox_events',
-        'tx_status',
-        new_column_name='status',
-    )
-    op.alter_column(
-        'outbox_events',
-        'js_payload',
-        new_column_name='payload',
-    )
-    op.alter_column(
-        'outbox_events',
-        'tx_event_type',
-        new_column_name='event_type',
-    )
-    op.alter_column(
-        'outbox_events',
-        'id_aggregate',
-        new_column_name='aggregate_id',
-    )
+    """Restore unprefixed column names when they still exist."""
+    for old_name, new_name in (
+        ("ts_published_at", "published_at"),
+        ("ts_created_at", "created_at"),
+        ("tx_status", "status"),
+        ("js_payload", "payload"),
+        ("tx_event_type", "event_type"),
+        ("id_aggregate", "aggregate_id"),
+    ):
+        _rename_column_if_needed("outbox_events", old_name, new_name)
 
-    op.alter_column(
-        'notifications',
-        'id_user',
-        existing_type=sa.Text(),
-        type_=sa.INTEGER(),
-        existing_nullable=False,
-        postgresql_using='id_user::integer',
-    )
+    notification_columns = _column_names("notifications")
+    if "id_user" in notification_columns:
+        op.alter_column(
+            "notifications",
+            "id_user",
+            existing_type=sa.Text(),
+            type_=sa.INTEGER(),
+            existing_nullable=False,
+            postgresql_using="id_user::integer",
+        )
 
-    op.alter_column(
-        'notification_channels',
-        'ts_updated_at',
-        new_column_name='updated_at',
-    )
-    op.alter_column(
-        'notification_channels',
-        'ts_created_at',
-        new_column_name='created_at',
-    )
-    op.alter_column(
-        'notification_channels',
-        'ts_sent_at',
-        new_column_name='sent_at',
-    )
-    op.alter_column(
-        'notification_channels',
-        'tx_last_error',
-        new_column_name='last_error',
-    )
-    op.alter_column(
-        'notification_channels',
-        'nu_attempt_count',
-        new_column_name='attempt_count',
-    )
-    op.alter_column(
-        'notification_channels',
-        'tx_status',
-        new_column_name='status',
-    )
-    op.alter_column(
-        'notification_channels',
-        'tx_channel',
-        new_column_name='channel',
-    )
+    for old_name, new_name in (
+        ("ts_updated_at", "updated_at"),
+        ("ts_created_at", "created_at"),
+        ("ts_sent_at", "sent_at"),
+        ("tx_last_error", "last_error"),
+        ("nu_attempt_count", "attempt_count"),
+        ("tx_status", "status"),
+        ("tx_channel", "channel"),
+    ):
+        _rename_column_if_needed("notification_channels", old_name, new_name)
