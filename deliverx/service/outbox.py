@@ -33,10 +33,10 @@ async def publish_outbox_event(outbox_event_id: int) -> None:
             await session.commit()
 
             payload = outbox_event.payload
-            channel = NotificationDeliveryMedium(payload["type_"])
+            priority = payload["priority"]
             kafka_message = KafkaMessage(**payload)
 
-            get_kafka_producer().send_message(kafka_message, channel)
+            get_kafka_producer().send_message(kafka_message, priority)
 
             await OutboxEvents.mark_sent(session, outbox_event_id)
             await session.commit()

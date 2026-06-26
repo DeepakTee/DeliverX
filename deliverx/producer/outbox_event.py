@@ -1,7 +1,7 @@
-from deliverx.constant.subscription import NotificationDeliveryMedium
 from deliverx.model.kafka_message import KafkaMessage
+from deliverx.constant.subscription import priority_tier
 from kafka.producer.kafka import KafkaProducer
-
+from loguru import logger
 
 class OutboxEvent:
     PREFIX = "notifications__"
@@ -13,10 +13,10 @@ class OutboxEvent:
             value_serializer=lambda v: v.model_dump_json().encode("utf-8"),
         )
 
-    def send_message(self, /, message: KafkaMessage, type_: NotificationDeliveryMedium):
+    def send_message(self, /, message: KafkaMessage, priority: int):
         future = self.kafka_producer.send(
-            topic=self.PREFIX + type_.value,
+            topic=self.PREFIX + priority_tier(priority).value,
             value=message,
-            key=type_.value,
+            key=priority_tier(priority).value,
         )
         future.get(timeout=10)

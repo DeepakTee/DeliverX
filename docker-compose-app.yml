@@ -7,8 +7,6 @@ services:
     image: deliverx:1.0
     build:
       context: .
-    ports:
-      - "8000:8000"
     network_mode: "host"
     volumes:
       - ./app-logs:/app/app-logs
@@ -19,8 +17,6 @@ services:
     build:
       context: .
     command: ["uv", "run", "python", "deliverx/scripts/start_kafka_consumer.py"]
-    ports:
-      - "8000:8000"
     network_mode: "host"
     volumes:
       - ./app-logs:/app/app-logs
@@ -31,8 +27,6 @@ services:
       context: .
     command: ["uv", "run", "python", "deliverx/scripts/start_kafka_consumer.py"]
 
-    ports:
-      - "8000:8000"
     network_mode: "host"
     volumes:
       - ./app-logs:/app/app-logs
@@ -42,8 +36,6 @@ services:
     build:
       context: .
     command: ["uv", "run", "python", "deliverx/scripts/start_kafka_consumer.py"]
-    ports:
-      - "8000:8000"
     network_mode: "host"
     volumes:
       - ./app-logs:/app/app-logs
@@ -53,8 +45,6 @@ services:
     build:
       context: .
     command: ["uv", "run", "python", "deliverx/scripts/start_kafka_consumer.py"]
-    ports:
-      - "8000:8000"
     network_mode: "host"
     volumes:
       - ./app-logs:/app/app-logs
